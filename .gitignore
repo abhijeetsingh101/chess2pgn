@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+train/pieces/
+train/lila/
+train/data/
+*.npz
+!app/model.npz
+.DS_Store

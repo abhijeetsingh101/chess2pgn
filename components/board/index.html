@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Streamlit custom component: interactive board editor (no build step, speaks the component protocol directly) -->
+<style>
+  :root { --light: #ecdab9; --dark: #ae8a68; --unsure: #ff8a00; --accent: #2f6f4f; --ink: #23211d; --line: #e2ddd5; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Source Sans Pro", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: transparent; }
+  .wrap { display: inline-block; }
+  .palette { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; max-width: 360px; }
+  .palette button { width: 28px; height: 28px; padding: 1px; border: 1px solid var(--line); background: #fff; border-radius: 5px; cursor: pointer; font-size: 13px; line-height: 1; }
+  .palette button.wide { width: auto; padding: 0 6px; }
+  .palette button img { width: 100%; height: 100%; pointer-events: none; }
+  .palette button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: #e3efe7; }
+  .bw { display: grid; grid-template-columns: 12px auto; grid-template-rows: auto 12px; gap: 1px; }
+  .ranks { display: grid; grid-template-rows: repeat(8, 1fr); font-size: 9px; color: #888; align-items: center; text-align: center; }
+  .files { grid-column: 2; display: grid; grid-template-columns: repeat(8, 1fr); font-size: 9px; color: #888; text-align: center; }
+  .board { display: grid; grid-template-columns: repeat(8, var(--sq)); grid-template-rows: repeat(8, var(--sq)); border: 2px solid #6d5640; border-radius: 2px; user-select: none; }
+  .sq { position: relative; display: flex; align-items: center; justify-content: center; }
+  .sq.l { background: var(--light); } .sq.d { background: var(--dark); }
+  .sq img { width: 92%; height: 92%; cursor: grab; }
+  .sq.unsure::after { content: ""; position: absolute; inset: 1px; border: 3px solid var(--unsure); border-radius: 3px; pointer-events: none; }
+  .sq.sel { box-shadow: inset 0 0 0 3px #2e7cf6; }
+  .sq.over { box-shadow: inset 0 0 0 3px var(--accent); }
+  .tools { display: flex; gap: 4px; margin-top: 6px; }
+  .tools button { font: inherit; font-size: 12px; padding: 3px 8px; border: 1px solid var(--line); background: #fff; border-radius: 6px; cursor: pointer; }
+  .tools button:hover, .palette button:hover { border-color: #b9b1a4; }
+  .hint { font-size: 11px; color: #888; margin-top: 4px; max-width: 360px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="palette" id="palette"></div>
+  <div class="bw">
+    <div class="ranks"><span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span></div>
+    <div class="board" id="board"></div>
+    <div class="files"><span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span></div>
+  </div>
+  <div class="tools">
+    <button id="rot" title="Diagram was printed from Black's side: rotate the position 180°">⟲ Rotate 180°</button>
+    <button id="clr" title="Empty the board">Clear</button>
+  </div>
+  <div class="hint">Pick a piece and click squares · right-click clears · drag to move · orange = recogniser was unsure</div>
+</div>
+<script>
+"use strict";
+// ---- minimal Streamlit component protocol ----
+function send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, data || {}), "*"); }
+let lastH = 0;
+function setHeight() {   // measure the content only (measuring the document would feed back into the frame height)
+  const h = Math.ceil(document.querySelector(".wrap").getBoundingClientRect().height) + 6;
+  if (h !== lastH) { lastH = h; send("streamlit:setFrameHeight", { height: h }); }
+}
+function setValue(v) { send("streamlit:setComponentValue", { value: v, dataType: "json" }); }
+
+const PIECES = "KQRBNPkqrbnp".split("");
+const img = p => `pieces/${p === p.toUpperCase() ? "w" : "b"}${p.toUpperCase()}.svg`;
+let board = Array(64).fill(""), unsure = new Set(), flipped = false;
+let loadedVersion = null, tool = "move", sel = null, maxSq = 44;
+function fitSize() {   // squares shrink to fit whatever column width Streamlit gives the iframe
+  const sq = Math.max(26, Math.min(maxSq, Math.floor((window.innerWidth - 22) / 8)));
+  document.documentElement.style.setProperty("--sq", sq + "px");
+  document.querySelector(".palette").style.maxWidth = (sq * 8 + 16) + "px";
+  setHeight();
+}
+window.addEventListener("resize", fitSize);
+
+function parsePlacement(pl) {
+  const b = Array(64).fill("");
+  pl.split("/").forEach((row, r) => { let c = 0; for (const ch of row) { if (/\d/.test(ch)) c += +ch; else { if (r < 8 && c < 8) b[r * 8 + c] = ch; c++; } } });
+  return b;
+}
+function placement() {
+  const rows = [];
+  for (let r = 0; r < 8; r++) {
+    let s = "", e = 0;
+    for (let c = 0; c < 8; c++) { const x = board[r * 8 + c]; if (!x) e++; else { if (e) { s += e; e = 0; } s += x; } }
+    rows.push(s + (e ? e : ""));
+  }
+  return rows.join("/");
+}
+function emit() {
+  setValue({ placement: placement(), uncertain: [...unsure], flipped, version: loadedVersion,
+             seq: Date.now() + "-" + Math.random().toString(36).slice(2, 7) });
+}
+
+function buildPalette() {
+  const pal = document.getElementById("palette");
+  const mk = (t, html, cls) => {
+    const b = document.createElement("button"); b.dataset.t = t; b.innerHTML = html; if (cls) b.className = cls;
+    b.onclick = () => { tool = t; sel = null; render(); };
+    pal.append(b); return b;
+  };
+  mk("move", "✋", "wide").title = "Move pieces";
+  PIECES.forEach(p => {
+    const b = mk(p, `<img src="${img(p)}">`); b.title = p; b.draggable = true;
+    b.addEventListener("dragstart", e => e.dataTransfer.setData("text/plain", JSON.stringify({ piece: p })));
+  });
+  mk("x", "⌫", "wide").title = "Erase";
+}
+
+function render() {
+  document.querySelectorAll(".palette button").forEach(b => b.classList.toggle("on", b.dataset.t === tool));
+  const bd = document.getElementById("board");
+  bd.innerHTML = "";
+  for (let i = 0; i < 64; i++) {
+    const r = i >> 3, c = i & 7, sq = document.createElement("div");
+    sq.className = `sq ${(r + c) % 2 ? "d" : "l"}` + (unsure.has(i) ? " unsure" : "") + (sel === i ? " sel" : "");
+    if (board[i]) {
+      const im = document.createElement("img"); im.src = img(board[i]); im.draggable = true;
+      im.addEventListener("dragstart", e => e.dataTransfer.setData("text/plain", JSON.stringify({ from: i, piece: board[i] })));
+      sq.append(im);
+    }
+    sq.onclick = () => click(i);
+    sq.oncontextmenu = e => { e.preventDefault(); board[i] = ""; unsure.delete(i); render(); emit(); };
+    sq.ondragover = e => { e.preventDefault(); sq.classList.add("over"); };
+    sq.ondragleave = () => sq.classList.remove("over");
+    sq.ondrop = e => {
+      e.preventDefault();
+      let d; try { d = JSON.parse(e.dataTransfer.getData("text/plain")); } catch { return; }
+      if (d.from !== undefined && d.from !== i) { board[d.from] = ""; unsure.delete(d.from); }
+      board[i] = d.piece; unsure.delete(i); render(); emit();
+    };
+    bd.append(sq);
+  }
+}
+function click(i) {
+  if (tool === "move") {
+    if (sel !== null && sel !== i && board[sel]) { board[i] = board[sel]; board[sel] = ""; unsure.delete(i); unsure.delete(sel); sel = null; render(); emit(); }
+    else { sel = board[i] ? i : null; render(); }
+    return;
+  }
+  const v = tool === "x" ? "" : tool;
+  board[i] = board[i] === v ? "" : v; unsure.delete(i); render(); emit();
+}
+document.getElementById("rot").onclick = () => { board.reverse(); unsure = new Set([...unsure].map(i => 63 - i)); flipped = !flipped; render(); emit(); };
+document.getElementById("clr").onclick = () => { board.fill(""); unsure.clear(); render(); emit(); };
+
+window.addEventListener("message", e => {
+  if (!e.data || e.data.type !== "streamlit:render") return;
+  const a = e.data.args || {};
+  maxSq = a.square || 44;
+  fitSize();
+  if (a.version !== loadedVersion) {   // Python sent a new position (first render or FEN typed by hand)
+    loadedVersion = a.version;
+    board = parsePlacement(a.placement || "8/8/8/8/8/8/8/8");
+    unsure = new Set(a.uncertain || []);
+    flipped = !!a.flipped;
+    sel = null;
+    render();
+  }
+  setHeight();
+});
+buildPalette();
+render();
+fitSize();
+send("streamlit:componentReady", { apiVersion: 1 });
+setHeight();
+window.addEventListener("load", setHeight);
+</script>
+</body>
+</html>

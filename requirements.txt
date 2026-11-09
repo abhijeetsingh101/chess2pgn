@@ -1,0 +1,6 @@
+streamlit>=1.50
+numpy>=1.23
+opencv-python-headless>=4.8
+chess>=1.10
+pymupdf>=1.23
+flask>=2.2

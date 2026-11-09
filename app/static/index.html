@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chess Diagram → PGN</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">♞</span>
+    <div>
+      <h1>Chess Diagram → PGN</h1>
+      <p>Book pages, PDFs, screenshots and photos in — clean PGN out.</p>
+    </div>
+  </div>
+  <div class="export">
+    <input id="filename" value="puzzles" spellcheck="false" title="File name">
+    <span class="ext">.pgn</span>
+    <button id="btnCopy" class="ghost">Copy PGN</button>
+    <button id="btnDownload" class="primary">Download PGN</button>
+  </div>
+</header>
+
+<main>
+  <section id="drop" class="drop">
+    <input id="fileInput" type="file" multiple accept="image/*,.pdf,application/pdf" hidden>
+    <div class="drop-inner">
+      <div class="drop-icon">⇪</div>
+      <div><strong>Drop PDFs or images here</strong>, <a href="#" id="browse">browse</a>, or paste a screenshot (Ctrl/⌘+V)</div>
+      <div class="muted">Each diagram is found automatically. Check each board below, then export.</div>
+    </div>
+    <div id="progress" class="progress" hidden><div class="bar"><span></span></div><div class="ptext"></div></div>
+  </section>
+
+  <div id="warnings"></div>
+
+  <section id="pagesBar" class="pages" hidden>
+    <span class="muted">Missed a diagram? Open a page and drag a box around it:</span>
+    <div id="pageList"></div>
+  </section>
+
+  <div id="palette" class="palette" hidden>
+    <div class="tools">
+      <button class="tool active" data-tool="move" title="Move pieces: drag, or click a piece then a square">✋ Move</button>
+      <span class="sep"></span>
+      <span class="pgroup" id="whitePieces"></span>
+      <span class="sep"></span>
+      <span class="pgroup" id="blackPieces"></span>
+      <span class="sep"></span>
+      <button class="tool" data-tool="x" title="Eraser: click squares to empty them">⌫ Erase</button>
+    </div>
+    <div class="hint">Pick a piece, then click squares to place it · right-click clears a square · orange outlines mark squares the recogniser was unsure about</div>
+  </div>
+
+  <div class="listhead" id="listHead" hidden>
+    <span id="count"></span>
+    <span class="spacer"></span>
+    <label class="chk"><input type="checkbox" id="onlyProblems"> Show only boards needing attention</label>
+    <button id="btnClear" class="ghost small">Remove all</button>
+  </div>
+
+  <section id="cards"></section>
+
+  <section id="empty" class="empty">
+    <h2>How it works</h2>
+    <ol>
+      <li><b>Upload</b> a PDF of a puzzle book, scanned pages, phone photos, or app screenshots.</li>
+      <li><b>Review</b> each recognised board next to the original. Fix any piece, and set who is to move.</li>
+      <li>Optionally type the <b>solution</b> in normal notation (e.g. <code>1. Qxf7+ Kxf7 2. Bc4+</code>). It is checked for legality.</li>
+      <li><b>Download</b> one PGN with every puzzle, ready for Lichess Studies, ChessBase, SCID, etc.</li>
+    </ol>
+  </section>
+</main>
+
+<div id="modal" class="modal" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <span id="modalTitle"></span>
+      <span class="muted">Drag a box tightly around the 8×8 squares (not the coordinates).</span>
+      <span class="spacer"></span>
+      <button id="modalCancel" class="ghost small">Cancel</button>
+      <button id="modalOk" class="primary small" disabled>Recognise selection</button>
+    </div>
+    <div class="modal-body"><div id="pageWrap"><img id="pageImg" alt=""><div id="sel"></div></div></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

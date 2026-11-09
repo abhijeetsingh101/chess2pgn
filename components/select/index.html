@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Streamlit custom component: drag a box on a page image; returns the box in 0..1 coordinates -->
+<style>
+  body { margin: 0; font-family: "Source Sans Pro", ui-sans-serif, system-ui, sans-serif; background: transparent; }
+  #wrap { position: relative; display: inline-block; cursor: crosshair; max-width: 100%; }
+  #img { display: block; max-width: 100%; user-select: none; -webkit-user-drag: none; border: 1px solid #e2ddd5; border-radius: 4px; }
+  #sel { position: absolute; border: 2px solid #2e7cf6; background: rgba(46, 124, 246, .12); display: none; pointer-events: none; }
+  .bar { display: flex; gap: 10px; align-items: center; margin: 0 0 8px; font-size: 13px; color: #77726a; }
+  button { font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 8px; border: 1px solid #2f6f4f; background: #2f6f4f; color: #fff; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar"><button id="ok" disabled>Recognise selection</button><span>Drag a box tightly around the 8×8 squares (not the coordinates).</span></div>
+<div id="wrap"><img id="img" alt=""><div id="sel"></div></div>
+<script>
+"use strict";
+function send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, data || {}), "*"); }
+let lastH = 0;
+function setHeight() {
+  const h = Math.ceil(document.querySelector(".bar").getBoundingClientRect().height +
+                      document.getElementById("wrap").getBoundingClientRect().height) + 16;
+  if (h !== lastH) { lastH = h; send("streamlit:setFrameHeight", { height: h }); }
+}
+const wrap = document.getElementById("wrap"), im = document.getElementById("img"), box = document.getElementById("sel");
+let start = null, rect = null, src = null;
+im.onload = setHeight;
+window.addEventListener("resize", setHeight);
+wrap.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  const r = im.getBoundingClientRect();
+  start = [e.clientX - r.left, e.clientY - r.top];
+  wrap.setPointerCapture(e.pointerId);
+});
+wrap.addEventListener("pointermove", e => {
+  if (!start) return;
+  const r = im.getBoundingClientRect();
+  const x = Math.min(Math.max(e.clientX - r.left, 0), r.width), y = Math.min(Math.max(e.clientY - r.top, 0), r.height);
+  const x0 = Math.min(start[0], x), y0 = Math.min(start[1], y), w = Math.abs(x - start[0]), h = Math.abs(y - start[1]);
+  rect = [x0 / r.width, y0 / r.height, (x0 + w) / r.width, (y0 + h) / r.height];
+  Object.assign(box.style, { display: "block", left: x0 + "px", top: y0 + "px", width: w + "px", height: h + "px" });
+});
+wrap.addEventListener("pointerup", () => {
+  start = null;
+  document.getElementById("ok").disabled = !(rect && (rect[2] - rect[0]) * im.width > 20 && (rect[3] - rect[1]) * im.height > 20);
+});
+document.getElementById("ok").onclick = () => {
+  send("streamlit:setComponentValue", { value: { box: rect, seq: Date.now() + "-" + Math.random().toString(36).slice(2, 7) }, dataType: "json" });
+  document.getElementById("ok").disabled = true;
+};
+window.addEventListener("message", e => {
+  if (!e.data || e.data.type !== "streamlit:render") return;
+  const a = e.data.args || {};
+  if (a.image !== src) { src = a.image; im.src = src; rect = null; box.style.display = "none"; document.getElementById("ok").disabled = true; }
+  setHeight();
+});
+send("streamlit:componentReady", { apiVersion: 1 });
+setHeight();
+</script>
+</body>
+</html>
